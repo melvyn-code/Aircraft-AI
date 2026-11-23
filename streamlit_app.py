@@ -1,110 +1,147 @@
 
+from pathlib import Path
 import io
 import json
-from pathlib import Path
 
 import streamlit as st
-import torch
-import torch.nn as nn
 from PIL import Image, ImageDraw, ImageFont
-from torchvision import models, transforms
-from ultralytics import YOLO
 
 
-# ==========================================================
+# --------------------------------------------------
 # CONFIGURATION
-# ==========================================================
+# --------------------------------------------------
 
-DOSSIER = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent
+MODELS_DIR = BASE_DIR / "models"
+CSS_PATH = BASE_DIR / "static" / "style.css"
 
-MODELE_DETECTION = DOSSIER / "models" / "modele_detection_avions.pt"
-MODELE_CLASSIFICATION = DOSSIER / "models" / "modele_classification_avions.pth"
-CSS_PATH = DOSSIER / "static" / "style.css"
-
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+YOLO_PATH = MODELS_DIR / "modele_detection_avions.pt"
+CLASSIFIER_PATH = MODELS_DIR / "modele_classification_avions.pth"
 
 st.set_page_config(
     page_title="Aircraft AI",
     page_icon="✈️",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 
-# ==========================================================
-# CHARGEMENT DU DESIGN
-# ==========================================================
+# --------------------------------------------------
+# CSS
+# --------------------------------------------------
 
-if CSS_PATH.exists():
-    css = CSS_PATH.read_text(encoding="utf-8")
-    st.markdown(
-        f"<style>\n{css}\n</style>",
-        unsafe_allow_html=True
-    )
-
-
-# ==========================================================
-# FONCTIONS UTILITAIRES
-# ==========================================================
-
-def image_en_bytes(image):
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    return buffer.getvalue()
+def charger_css():
+    if CSS_PATH.exists():
+        css = CSS_PATH.read_text(encoding="utf-8")
+        st.markdown(
+            f"<style>{css}</style>",
+            unsafe_allow_html=True
+        )
 
 
-def charger_police(taille=18):
-    try:
-        return ImageFont.truetype("DejaVuSans.ttf", taille)
-    except OSError:
-        return ImageFont.load_default()
+charger_css()
 
 
-# ==========================================================
-# CHARGEMENT DES MODELES IA
-# ==========================================================
+# --------------------------------------------------
+# HTML HEADER
+# --------------------------------------------------
+
+st.markdown("""
+<div class="hero">
+    <div class="hero-tag">ARTIFICIAL INTELLIGENCE · AVIATION</div>
+    <h1>Aircraft <span>AI</span></h1>
+    <p class="hero-subtitle">
+        Une intelligence artificielle dédiée à la détection
+        et à la classification des aéronefs.
+    </p>
+    <div class="hero-line"></div>
+</div>
+""", unsafe_allow_html=True)
+
+
+# --------------------------------------------------
+# MODEL LOADING
+# --------------------------------------------------
 
 @st.cache_resource
 def charger_modeles():
+    import torch
+    import torch.nn as nn
+    from torchvision import models, transforms
+    from ultralytics import YOLO
 
-    if not MODELE_DETECTION.exists():
+    if not YOLO_PATH.exists():
         raise FileNotFoundError(
-            f"Modèle YOLO introuvable : {MODELE_DETECTION}"
+            f"Modèle YOLO introuvable : {YOLO_PATH}"
         )
 
-    if not MODELE_CLASSIFICATION.exists():
+    if not CLASSIFIER_PATH.exists():
         raise FileNotFoundError(
-            f"Modèle ResNet50 introuvable : {MODELE_CLASSIFICATION}"
+            f"Modèle de classification introuvable : {CLASSIFIER_PATH}"
         )
 
-    # Modèle YOLO
-    modele_yolo = YOLO(str(MODELE_DETECTION))
+    # Chargement du modèle de détection
+    modele_detection = YOLO(str(YOLO_PATH))
 
-    # Chargement du modèle ResNet50
-    checkpoint = torch.load(
-        MODELE_CLASSIFICATION,
-        map_location=DEVICE,
-        weights_only=False
-    )
+    # Chargement du checkpoint de classification
+    try:
+        checkpoint = torch.load(
+            str(CLASSIFIER_PATH),
+            map_location="cpu",
+            weights_only=False
+        )
+    except TypeError:
+        checkpoint = torch.load(
+            str(CLASSIFIER_PATH),
+            map_location="cpu"
+        )
 
-    categories = checkpoint["categories"]
+    if not isinstance(checkpoint, dict):
+        raise ValueError("Le fichier de classification est invalide.")
 
-    modele_resnet = models.resnet50(weights=None)
+    categories = checkpoint.get("categories")
 
-    modele_resnet.fc = nn.Linear(
-        modele_resnet.fc.in_features,
+    if not categories:
+        raise ValueError(
+            "La liste des catégories est absente du checkpoint."
+        )
+
+    if isinstance(categories, dict):
+        categories = [
+            categories[key]
+            for key in sorted(categories.keys())
+        ]
+
+    categories = list(categories)
+
+    taille_image = int(checkpoint.get("taille_image", 224))
+
+    # Architecture ResNet50
+    modele_classification = models.resnet50(weights=None)
+    modele_classification.fc = nn.Linear(
+        modele_classification.fc.in_features,
         len(categories)
     )
 
-    modele_resnet.load_state_dict(
-        checkpoint["model_state"]
+    poids = checkpoint.get(
+        "model_state",
+        checkpoint.get("state_dict", checkpoint)
     )
 
-    modele_resnet.to(DEVICE)
-    modele_resnet.eval()
+    # Retire un éventuel préfixe "module."
+    poids_corriges = {}
+    for key, value in poids.items():
+        nouveau_key = key.replace("module.", "", 1)
+        poids_corriges[nouveau_key] = value
 
-    taille_image = checkpoint.get("taille_image", 224)
+    modele_classification.load_state_dict(
+        poids_corriges,
+        strict=True
+    )
 
+    modele_classification.eval()
+
+    # Prétraitement identique à celui d'un ResNet50 ImageNet
     transformation = transforms.Compose([
         transforms.Resize((taille_image, taille_image)),
         transforms.ToTensor(),
@@ -115,153 +152,137 @@ def charger_modeles():
     ])
 
     return (
-        modele_yolo,
-        modele_resnet,
+        modele_detection,
+        modele_classification,
         categories,
-        transformation
+        transformation,
+        torch
     )
 
 
-# ==========================================================
-# CLASSIFICATION D'UN AVION
-# ==========================================================
+# --------------------------------------------------
+# AIRCRAFT CLASSIFICATION
+# --------------------------------------------------
 
 def classifier_avion(
-    crop,
-    modele_resnet,
-    categories,
-    transformation
-):
-
-    image_tensor = transformation(crop)
-    image_tensor = image_tensor.unsqueeze(0).to(DEVICE)
-
-    with torch.no_grad():
-        sorties = modele_resnet(image_tensor)
-        probabilites = torch.softmax(sorties, dim=1)
-
-        confiance, indice = torch.max(
-            probabilites,
-            dim=1
-        )
-
-    classe = categories[indice.item()]
-    score = confiance.item()
-
-    return classe, score
-
-
-# ==========================================================
-# DETECTION ET CLASSIFICATION
-# ==========================================================
-
-def analyser_image(
-    image,
-    modele_yolo,
-    modele_resnet,
+    image_avion,
+    modele_classification,
     categories,
     transformation,
-    seuil
+    torch
 ):
+    image_avion = image_avion.convert("RGB")
+    tensor_image = transformation(image_avion).unsqueeze(0)
+
+    with torch.no_grad():
+        predictions = modele_classification(tensor_image)
+        probabilites = torch.softmax(predictions, dim=1)
+        confiance, indice = torch.max(probabilites, dim=1)
+
+    classe = categories[indice.item()]
+    confiance = float(confiance.item())
+
+    return classe, confiance
+
+
+# --------------------------------------------------
+# IMAGE ANALYSIS
+# --------------------------------------------------
+
+def analyser_image(image):
+    (
+        modele_detection,
+        modele_classification,
+        categories,
+        transformation,
+        torch
+    ) = charger_modeles()
 
     image_originale = image.convert("RGB")
     image_annotee = image_originale.copy()
 
     dessin = ImageDraw.Draw(image_annotee)
-    police = charger_police(18)
+    largeur, hauteur = image_annotee.size
 
-    resultats = modele_yolo.predict(
+    try:
+        police = ImageFont.truetype("arial.ttf", 18)
+    except OSError:
+        police = ImageFont.load_default()
+
+    resultats = modele_detection.predict(
         source=image_originale,
-        conf=seuil,
+        conf=0.25,
         verbose=False
     )
 
-    avions = []
-    numero = 0
+    avions_detectes = []
+    numero = 1
 
     for resultat in resultats:
-
         if resultat.boxes is None:
             continue
 
         for boite in resultat.boxes:
+            coordonnees = boite.xyxy[0].cpu().tolist()
+            confiance_detection = float(boite.conf[0].cpu())
 
-            x1, y1, x2, y2 = map(
-                int,
-                boite.xyxy[0].tolist()
-            )
+            x1, y1, x2, y2 = [
+                int(max(0, valeur))
+                for valeur in coordonnees
+            ]
 
-            x1 = max(0, x1)
-            y1 = max(0, y1)
-            x2 = min(image_originale.width, x2)
-            y2 = min(image_originale.height, y2)
+            x2 = min(x2, largeur)
+            y2 = min(y2, hauteur)
 
             if x2 <= x1 or y2 <= y1:
                 continue
 
-            # Découpage de l'avion
-            crop = image_originale.crop(
-                (x1, y1, x2, y2)
-            )
+            # Découpage de l'aéronef détecté
+            crop = image_originale.crop((x1, y1, x2, y2))
 
-            # Classification ResNet50
-            classe, confiance = classifier_avion(
+            # Classification de l'aéronef
+            classe, confiance_classification = classifier_avion(
                 crop,
-                modele_resnet,
+                modele_classification,
                 categories,
-                transformation
+                transformation,
+                torch
             )
 
-            numero += 1
-
-            libelle = (
-                f"Avion {numero} : {classe} "
-                f"({confiance * 100:.1f}%)"
-            )
-
-            # Rectangle autour de l'avion
+            # Dessin du rectangle
             dessin.rectangle(
                 (x1, y1, x2, y2),
-                outline="#38BDF8",
+                outline="#38bdf8",
                 width=4
             )
 
-            # Position du texte
-            position_texte = (
-                x1,
-                max(0, y1 - 32)
-            )
+            texte = f"{classe} ({confiance_classification:.1%})"
 
             boite_texte = dessin.textbbox(
-                position_texte,
-                libelle,
+                (x1, max(0, y1 - 28)),
+                texte,
                 font=police
             )
 
-            # Fond du texte
-            dessin.rounded_rectangle(
-                (
-                    boite_texte[0] - 6,
-                    boite_texte[1] - 5,
-                    boite_texte[2] + 6,
-                    boite_texte[3] + 5
-                ),
-                radius=6,
+            dessin.rectangle(
+                boite_texte,
                 fill="#071426"
             )
 
             dessin.text(
-                position_texte,
-                libelle,
-                fill="white",
+                (x1, max(0, y1 - 28)),
+                texte,
+                fill="#38bdf8",
                 font=police
             )
 
-            # Enregistrement des informations
-            avions.append({
+            avions_detectes.append({
                 "numero": numero,
                 "class": str(classe),
-                "confidence": round(float(confiance), 4),
+                "confidence": round(confiance_classification, 4),
+                "detection_confidence": round(
+                    confiance_detection, 4
+                ),
                 "coordinates": {
                     "x1": x1,
                     "y1": y1,
@@ -270,322 +291,157 @@ def analyser_image(
                 }
             })
 
-    return image_annotee, avions
+            numero += 1
+
+    return image_annotee, avions_detectes
 
 
-# ==========================================================
-# EN-TETE AIRCRAFT AI
-# ==========================================================
+# --------------------------------------------------
+# SIDEBAR
+# --------------------------------------------------
 
-st.markdown(
-    """
-    <div class="hero">
+with st.sidebar:
+    st.markdown("## ✈️ Aircraft AI")
+    st.caption("Plateforme d'analyse aéronautique")
 
-        <div class="hero-top">
-            <div class="hero-icon">✈</div>
+    st.markdown("---")
+    st.markdown("### Fonctionnalités")
 
-            <div class="hero-status">
-                <span class="status-dot"></span>
-                SYSTÈME IA ACTIF
-            </div>
-        </div>
+    st.markdown("""
+    - Détection des aéronefs
+    - Classification automatique
+    - Estimation de confiance
+    - Export des résultats JSON
+    """)
 
-        <h1>Aircraft <span>AI</span></h1>
+    st.markdown("---")
+    st.caption("Développé avec Python, YOLO et ResNet50")
 
-        <p class="hero-subtitle">
-            Détection et classification intelligente d'aéronefs
+
+# --------------------------------------------------
+# MAIN INTERFACE
+# --------------------------------------------------
+
+st.markdown("""
+<div class="section-heading">
+    <span class="section-number">01</span>
+    <div>
+        <h2>Analyse d'une image</h2>
+        <p>Importe une image pour détecter et identifier les aéronefs.</p>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+col_upload, col_info = st.columns([1.5, 1])
+
+with col_upload:
+    fichier = st.file_uploader(
+        "Importer une image",
+        type=["jpg", "jpeg", "png"],
+        help="Formats acceptés : JPG, JPEG et PNG."
+    )
+
+with col_info:
+    st.markdown("""
+    <div class="info-card">
+        <div class="info-card-icon">◎</div>
+        <h3>Comment ça fonctionne ?</h3>
+        <p>
+            YOLO repère les aéronefs dans l'image.
+            ResNet50 analyse ensuite chaque zone détectée
+            pour identifier sa catégorie.
         </p>
-
-        <div class="hero-line"></div>
-
-        <p class="hero-description">
-            Analysez vos images grâce à l'intelligence artificielle.
-            Détectez les avions et identifiez automatiquement leurs catégories.
-        </p>
-
     </div>
-    """,
-    unsafe_allow_html=True
-)
+    """, unsafe_allow_html=True)
 
 
-# ==========================================================
-# CHARGEMENT DES MODELES
-# ==========================================================
+# --------------------------------------------------
+# DISPLAY AND ANALYSIS
+# --------------------------------------------------
 
-try:
+if fichier is not None:
+    image = Image.open(fichier).convert("RGB")
 
-    with st.spinner("Chargement des modèles IA..."):
-
-        (
-            modele_yolo,
-            modele_resnet,
-            categories,
-            transformation
-        ) = charger_modeles()
-
-    st.markdown(
-        """
-        <div class="success-card">
-            <div class="success-icon">✓</div>
-
-            <div>
-                <strong>Modèles chargés avec succès</strong>
-                <p>YOLO et ResNet50 sont prêts pour l'analyse.</p>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
+    st.markdown("### Image importée")
+    st.image(
+        image,
+        caption="Image originale",
+        use_container_width=True
     )
 
-except Exception as erreur:
-
-    st.error(
-        f"Impossible de charger les modèles : {erreur}"
+    lancer_analyse = st.button(
+        "Lancer l'analyse",
+        type="primary",
+        use_container_width=True
     )
 
-    st.stop()
+    if lancer_analyse:
+        try:
+            with st.spinner(
+                "Analyse en cours : détection et classification..."
+            ):
+                image_resultat, avions = analyser_image(image)
 
+            st.success("Analyse terminée.")
 
-# ==========================================================
-# PARAMETRES
-# ==========================================================
+            st.markdown("## Résultat de l'analyse")
 
-st.markdown(
-    """
-    <div class="section-heading">
-        <div class="section-number">01</div>
+            col_image, col_stats = st.columns([1.6, 1])
 
-        <div>
-            <h2>Paramètres d'analyse</h2>
-            <p>Configurez la détection de vos aéronefs.</p>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-col1, col2 = st.columns(2)
-
-with col1:
-
-    seuil = st.slider(
-        "Seuil de confiance YOLO",
-        min_value=0.05,
-        max_value=0.95,
-        value=0.25,
-        step=0.05
-    )
-
-with col2:
-
-    st.markdown(
-        f"""
-        <div class="info-card">
-            <div class="info-card-label">
-                CLASSES DISPONIBLES
-            </div>
-
-            <div class="info-card-value">
-                {len(categories)}
-            </div>
-
-            <div class="info-card-description">
-                Catégories reconnues par ResNet50
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-
-# ==========================================================
-# IMPORTATION DE L'IMAGE
-# ==========================================================
-
-st.markdown(
-    """
-    <div class="section-heading">
-        <div class="section-number">02</div>
-
-        <div>
-            <h2>Importer une image</h2>
-            <p>Choisissez une photographie contenant un ou plusieurs avions.</p>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-fichier_image = st.file_uploader(
-    "Sélectionner une image",
-    type=["jpg", "jpeg", "png", "webp"]
-)
-
-
-# ==========================================================
-# ANALYSE DE L'IMAGE
-# ==========================================================
-
-if fichier_image is not None:
-
-    try:
-
-        image = Image.open(fichier_image).convert("RGB")
-
-        st.markdown(
-            """
-            <div class="section-heading">
-                <div class="section-number">03</div>
-
-                <div>
-                    <h2>Image importée</h2>
-                    <p>Vérifiez votre image avant de lancer l'analyse.</p>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-        st.image(
-            image,
-            caption="Image originale",
-            width=500
-        )
-
-        lancer = st.button(
-            "✈ LANCER L'ANALYSE",
-            type="primary",
-            use_container_width=True
-        )
-
-        if lancer:
-
-            with st.spinner("Analyse des aéronefs en cours..."):
-
-                image_annotee, avions = analyser_image(
-                    image,
-                    modele_yolo,
-                    modele_resnet,
-                    categories,
-                    transformation,
-                    seuil
+            with col_image:
+                st.image(
+                    image_resultat,
+                    caption="Aéronefs détectés et classifiés",
+                    use_container_width=True
                 )
 
-            # Résultats
-            st.markdown(
-                """
-                <div class="section-heading">
-                    <div class="section-number">04</div>
-
-                    <div>
-                        <h2>Résultats de l'analyse</h2>
-                        <p>Voici les aéronefs détectés et classifiés.</p>
+            with col_stats:
+                st.markdown(
+                    f"""
+                    <div class="result-card">
+                        <p class="result-label">AÉRONEFS DÉTECTÉS</p>
+                        <div class="result-number">{len(avions)}</div>
+                        <p class="result-description">
+                            Nombre total d'aéronefs identifiés
+                        </p>
                     </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-            nombre_avions = len(avions)
-
-            st.markdown(
-                f"""
-                <div class="result-banner">
-
-                    <div>
-                        <div class="result-label">
-                            AÉRONEFS DÉTECTÉS
-                        </div>
-
-                        <div class="result-number">
-                            {nombre_avions}
-                        </div>
-                    </div>
-
-                    <div class="result-symbol">✈</div>
-
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-            # Image annotée
-            st.markdown(
-                '<div class="result-card">',
-                unsafe_allow_html=True
-            )
-
-            st.markdown("### Image avec détections")
-
-            st.image(
-                image_annotee,
-                caption="Détections et classifications",
-                width=500
-            )
-
-            st.markdown("</div>", unsafe_allow_html=True)
-
-            # Liste des avions
-            st.markdown("### Détails des aéronefs")
+                    """,
+                    unsafe_allow_html=True
+                )
 
             if avions:
+                st.markdown("### Détails des aéronefs")
 
                 for avion in avions:
-
                     st.markdown(
                         f"""
                         <div class="aircraft-card">
-
-                            <div class="aircraft-card-top">
-                                <span class="aircraft-number">
-                                    AVION {avion["numero"]:02d}
+                            <div>
+                                <span class="aircraft-index">
+                                    AÉRONEF {avion["numero"]:02d}
                                 </span>
-
-                                <span class="aircraft-confidence">
-                                    {avion["confidence"] * 100:.1f} %
-                                </span>
+                                <h3>{avion["class"]}</h3>
                             </div>
-
-                            <h3>{avion["class"]}</h3>
-
-                            <p>
-                                Coordonnées :
-                                X1 {avion["coordinates"]["x1"]} ·
-                                Y1 {avion["coordinates"]["y1"]} ·
-                                X2 {avion["coordinates"]["x2"]} ·
-                                Y2 {avion["coordinates"]["y2"]}
-                            </p>
-
+                            <div class="confidence">
+                                {avion["confidence"]:.1%}
+                            </div>
                         </div>
                         """,
                         unsafe_allow_html=True
                     )
 
+                    st.caption(
+                        "Confiance de détection : "
+                        f"{avion['detection_confidence']:.1%}"
+                    )
             else:
-
                 st.warning(
-                    "Aucun avion détecté. "
-                    "Essaie de diminuer le seuil de confiance."
+                    "Aucun aéronef n'a été détecté dans cette image."
                 )
 
-            # Téléchargements
-            st.markdown(
-                """
-                <div class="section-heading">
-                    <div class="section-number">05</div>
-
-                    <div>
-                        <h2>Exporter les résultats</h2>
-                        <p>Téléchargez les images et les données.</p>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
+            # Export JSON
             donnees_json = {
-                fichier_image.name: avions
+                fichier.name: avions
             }
 
             json_bytes = json.dumps(
@@ -594,56 +450,27 @@ if fichier_image is not None:
                 ensure_ascii=False
             ).encode("utf-8")
 
-            col1, col2 = st.columns(2)
+            st.download_button(
+                label="Télécharger les résultats en JSON",
+                data=json_bytes,
+                file_name="resultats_aircraft_ai.json",
+                mime="application/json",
+                use_container_width=True
+            )
 
-            with col1:
-
-                st.download_button(
-                    "Télécharger l'image annotée",
-                    data=image_en_bytes(image_annotee),
-                    file_name="aircraft_ai_resultat.png",
-                    mime="image/png",
-                    use_container_width=True
-                )
-
-            with col2:
-
-                st.download_button(
-                    "Télécharger les résultats JSON",
-                    data=json_bytes,
-                    file_name="aircraft_ai_resultats.json",
-                    mime="application/json",
-                    use_container_width=True
-                )
-
-    except Exception as erreur:
-
-        st.error(
-            f"Une erreur est survenue pendant l'analyse : {erreur}"
-        )
+        except Exception as erreur:
+            st.error("Une erreur est survenue pendant l'analyse.")
+            st.exception(erreur)
 
 
-# ==========================================================
-# PIED DE PAGE
-# ==========================================================
+# --------------------------------------------------
+# FOOTER
+# --------------------------------------------------
 
-st.markdown(
-    """
-    <div class="footer">
-
-        <div class="footer-logo">
-            ✈ AIRCRAFT AI
-        </div>
-
-        <p>
-            Détection et classification d'aéronefs par intelligence artificielle
-        </p>
-
-        <span>
-            YOLO · RESNET50 · STREAMLIT
-        </span>
-
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+st.markdown("""
+<div class="footer">
+    <div class="footer-line"></div>
+    <p>Aircraft <span>AI</span> · Détection intelligente d'aéronefs</p>
+    <small>Powered by Python · YOLO · ResNet50 · Streamlit</small>
+</div>
+""", unsafe_allow_html=True)
