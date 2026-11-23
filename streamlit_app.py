@@ -18,7 +18,8 @@ from ultralytics import YOLO
 st.set_page_config(
     page_title="Aircraft AI",
     page_icon="✈️",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
 DOSSIER = Path(__file__).resolve().parent
@@ -37,7 +38,23 @@ DEVICE = torch.device(
 
 
 # ============================================================
-# CONVERSION IMAGE EN BYTES
+# CHARGEMENT DU DESIGN CSS
+# ============================================================
+
+CSS_PATH = DOSSIER / "static" / "style.css"
+
+if CSS_PATH.exists():
+
+    with open(CSS_PATH, encoding="utf-8") as fichier:
+
+        st.markdown(
+            f"<style>{fichier.read()}</style>",
+            unsafe_allow_html=True
+        )
+
+
+# ============================================================
+# FONCTION IMAGE EN BYTES
 # ============================================================
 
 def _image_en_bytes(image):
@@ -66,10 +83,8 @@ def charger_modeles():
             f"Modèle ResNet50 introuvable : {MODELE_CLASSIFICATION}"
         )
 
-    # Chargement YOLO
     modele_yolo = YOLO(str(MODELE_DETECTION))
 
-    # Chargement ResNet50
     checkpoint = torch.load(
         MODELE_CLASSIFICATION,
         map_location=DEVICE,
@@ -81,19 +96,17 @@ def charger_modeles():
     taille_image = checkpoint.get("taille_image", 224)
 
     if isinstance(categories, dict):
+
         categories = [
             categories[i]
             for i in sorted(categories.keys())
         ]
 
-    # Création du réseau ResNet50
     modele_resnet = models.resnet50(weights=None)
-
-    nombre_classes = len(categories)
 
     modele_resnet.fc = nn.Linear(
         modele_resnet.fc.in_features,
-        nombre_classes
+        len(categories)
     )
 
     modele_resnet.load_state_dict(
@@ -104,7 +117,6 @@ def charger_modeles():
 
     modele_resnet.eval()
 
-    # Prétraitement des images
     transformation = transforms.Compose([
 
         transforms.Resize(
@@ -160,9 +172,7 @@ def classifier_avion(
 
     classe = categories[indice.item()]
 
-    confiance = confiance.item()
-
-    return classe, confiance
+    return classe, confiance.item()
 
 
 # ============================================================
@@ -180,7 +190,6 @@ def analyser_image(
 
     image = image.convert("RGB")
 
-    # Détection avec YOLO
     resultats = modele_yolo.predict(
         source=image,
         conf=seuil_confiance,
@@ -191,7 +200,6 @@ def analyser_image(
 
     avions = []
 
-    # Copie de l'image originale
     image_annotee = image.copy()
 
     dessin = ImageDraw.Draw(image_annotee)
@@ -200,15 +208,12 @@ def analyser_image(
 
         for boite in resultat.boxes:
 
-            # Coordonnées de la détection
             coordonnees = boite.xyxy[0].cpu().numpy()
 
             xmin, ymin, xmax, ymax = [
-                int(valeur)
-                for valeur in coordonnees
+                int(valeur) for valeur in coordonnees
             ]
 
-            # Limites de l'image
             xmin = max(0, xmin)
             ymin = max(0, ymin)
 
@@ -218,12 +223,10 @@ def analyser_image(
             if xmax <= xmin or ymax <= ymin:
                 continue
 
-            # Découpage de l'avion
             crop = image.crop(
                 (xmin, ymin, xmax, ymax)
             )
 
-            # Classification du même avion
             classe, confiance = classifier_avion(
                 crop,
                 modele_resnet,
@@ -231,42 +234,33 @@ def analyser_image(
                 transformation
             )
 
-            # Numéro unique
             numero = len(avions) + 1
 
-            # Enregistrement des résultats
             avions.append({
 
                 "numero": numero,
 
                 "class": str(classe),
 
-                "confidence": round(
-                    confiance,
-                    4
-                ),
+                "confidence": round(confiance, 4),
 
                 "coordinates": {
-
                     "xmin": xmin,
                     "ymin": ymin,
                     "xmax": xmax,
                     "ymax": ymax
-
                 }
 
             })
 
-            # Dessin du rectangle
-            couleur = "lime"
-
+            # Rectangle autour de l'avion
             dessin.rectangle(
                 (xmin, ymin, xmax, ymax),
-                outline=couleur,
+                outline="#38f8a5",
                 width=4
             )
 
-            # Texte affiché au-dessus du rectangle
+            # Etiquette
             etiquette = (
                 f"Avion {numero} : {classe} "
                 f"({confiance * 100:.1f}%)"
@@ -277,13 +271,9 @@ def analyser_image(
                 etiquette
             )
 
-            largeur = (
-                boite_texte[2] - boite_texte[0]
-            )
+            largeur = boite_texte[2] - boite_texte[0]
 
-            hauteur = (
-                boite_texte[3] - boite_texte[1]
-            )
+            hauteur = boite_texte[3] - boite_texte[1]
 
             texte_x = xmin
 
@@ -292,7 +282,6 @@ def analyser_image(
                 ymin - hauteur - 10
             )
 
-            # Fond de l'étiquette
             dessin.rectangle(
                 (
                     texte_x,
@@ -300,38 +289,52 @@ def analyser_image(
                     texte_x + largeur + 10,
                     texte_y + hauteur + 8
                 ),
-                fill=couleur
+                fill="#38f8a5"
             )
 
-            # Texte de classification
             dessin.text(
                 (
                     texte_x + 5,
                     texte_y + 4
                 ),
                 etiquette,
-                fill="black"
+                fill="#071426"
             )
 
     return image_annotee, avions
 
 
 # ============================================================
-# INTERFACE AIRCRAFT AI
+# EN-TETE
 # ============================================================
 
-st.title("✈️ Aircraft AI")
-
-st.subheader(
-    "Détection et classification automatique d'avions"
+st.markdown(
+    """
+    <div class="hero">
+        <div class="hero-icon">✈</div>
+        <div class="hero-label">ARTIFICIAL INTELLIGENCE</div>
+        <h1>AIRCRAFT AI</h1>
+        <p>
+            Advanced aircraft detection and classification system
+        </p>
+        <div class="hero-status">
+            <span class="status-dot"></span>
+            SYSTEM READY
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
 )
 
-st.write(
-    "Importe une image pour détecter les avions présents "
-    "et identifier leur catégorie grâce à l'intelligence artificielle."
+st.markdown(
+    """
+    <div class="section-heading">
+        <span class="section-number">01</span>
+        <span>IMAGE ANALYSIS</span>
+    </div>
+    """,
+    unsafe_allow_html=True
 )
-
-st.divider()
 
 
 # ============================================================
@@ -340,9 +343,7 @@ st.divider()
 
 try:
 
-    with st.spinner(
-        "Chargement des modèles d'intelligence artificielle..."
-    ):
+    with st.spinner("Initialisation des modèles IA..."):
 
         (
             modele_yolo,
@@ -350,10 +351,6 @@ try:
             categories,
             transformation
         ) = charger_modeles()
-
-    st.success(
-        "Les modèles sont chargés et prêts à fonctionner."
-    )
 
 except Exception as erreur:
 
@@ -369,8 +366,9 @@ except Exception as erreur:
 # ============================================================
 
 fichier_image = st.file_uploader(
-    "Choisis une image contenant un ou plusieurs avions",
-    type=["jpg", "jpeg", "png"]
+    "Importer une image aéronautique",
+    type=["jpg", "jpeg", "png"],
+    help="Formats acceptés : JPG, JPEG et PNG"
 )
 
 
@@ -380,39 +378,81 @@ if fichier_image is not None:
         fichier_image
     ).convert("RGB")
 
-    st.subheader("Image importée")
-
-    st.image(
-        image,
-        caption="Image originale",
-        width=500
+    col_image, col_info = st.columns(
+        [1.5, 1]
     )
 
-    st.divider()
+    with col_image:
 
-    # Seuil de confiance
+        st.markdown(
+            '<div class="card-title">IMAGE SOURCE</div>',
+            unsafe_allow_html=True
+        )
+
+        st.image(
+            image,
+            width=500
+        )
+
+    with col_info:
+
+        st.markdown(
+            '<div class="card-title">FILE INFORMATION</div>',
+            unsafe_allow_html=True
+        )
+
+        st.markdown(
+            f"""
+            <div class="info-card">
+                <div class="info-label">FILENAME</div>
+                <div class="info-value">{fichier_image.name}</div>
+                <div class="info-divider"></div>
+                <div class="info-label">IMAGE DIMENSIONS</div>
+                <div class="info-value">
+                    {image.width} × {image.height} px
+                </div>
+                <div class="info-divider"></div>
+                <div class="info-label">IMAGE FORMAT</div>
+                <div class="info-value">RGB</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    st.markdown(
+        '<div class="section-heading"><span class="section-number">02</span><span>DETECTION SETTINGS</span></div>',
+        unsafe_allow_html=True
+    )
+
     seuil = st.slider(
-        "Seuil de confiance de détection",
+        "Detection confidence threshold",
         min_value=0.05,
         max_value=0.95,
         value=0.25,
         step=0.05
     )
 
+    st.markdown(
+        f'<div class="threshold-value">CONFIDENCE THRESHOLD : {seuil * 100:.0f}%</div>',
+        unsafe_allow_html=True
+    )
+
+    lancer_analyse = st.button(
+        "✦  LAUNCH AIRCRAFT ANALYSIS",
+        type="primary",
+        use_container_width=True
+    )
+
     # ========================================================
     # ANALYSE
     # ========================================================
 
-    if st.button(
-        "🔍 Analyser l'image",
-        type="primary",
-        use_container_width=True
-    ):
+    if lancer_analyse:
 
         try:
 
             with st.spinner(
-                "Analyse en cours..."
+                "Detection and classification in progress..."
             ):
 
                 image_annotee, avions = analyser_image(
@@ -424,41 +464,69 @@ if fichier_image is not None:
                     seuil
                 )
 
-            st.success("Analyse terminée !")
-
-            # =================================================
-            # NOMBRE D'AVIONS
-            # =================================================
-
             nombre_avions = len(avions)
 
-            st.subheader("Résultats de l'analyse")
-
-            st.metric(
-                label="Nombre d'avions détectés",
-                value=nombre_avions
+            st.markdown(
+                """
+                <div class="section-heading">
+                    <span class="section-number">03</span>
+                    <span>ANALYSIS RESULTS</span>
+                </div>
+                """,
+                unsafe_allow_html=True
             )
 
-            # =================================================
-            # IMAGE ANNOTÉE
-            # =================================================
+            # Cartes statistiques
+            col_stat1, col_stat2, col_stat3 = st.columns(3)
 
-            st.subheader(
-                "Image avec les avions détectés et classifiés"
+            with col_stat1:
+
+                st.metric(
+                    "AIRCRAFT DETECTED",
+                    nombre_avions
+                )
+
+            with col_stat2:
+
+                st.metric(
+                    "CLASSES IDENTIFIED",
+                    len(set(a["class"] for a in avions))
+                )
+
+            with col_stat3:
+
+                confiance_moyenne = (
+                    sum(a["confidence"] for a in avions)
+                    / nombre_avions * 100
+                    if nombre_avions > 0
+                    else 0
+                )
+
+                st.metric(
+                    "AVERAGE CONFIDENCE",
+                    f"{confiance_moyenne:.1f}%"
+                )
+
+            # Image annotée
+            st.markdown(
+                '<div class="card-title">DETECTION VISUALIZATION</div>',
+                unsafe_allow_html=True
             )
 
             st.image(
                 image_annotee,
-                caption="Résultat Aircraft AI",
                 width=500
             )
 
-            # =================================================
-            # CLASSIFICATION
-            # =================================================
-
-            st.subheader(
-                "Classification des avions"
+            # Liste des avions
+            st.markdown(
+                """
+                <div class="section-heading">
+                    <span class="section-number">04</span>
+                    <span>CLASSIFICATION DETAILS</span>
+                </div>
+                """,
+                unsafe_allow_html=True
             )
 
             if nombre_avions == 0:
@@ -472,34 +540,52 @@ if fichier_image is not None:
                 for avion in avions:
 
                     with st.expander(
-                        f"Avion {avion['numero']} — "
-                        f"Classe : {avion['class']}"
+                        f"✈  AIRCRAFT {avion['numero']}  |  "
+                        f"{avion['class']}"
                     ):
 
-                        st.write(
-                            f"**Numéro :** {avion['numero']}"
-                        )
+                        c1, c2 = st.columns(2)
 
-                        st.write(
-                            f"**Classe détectée :** "
-                            f"{avion['class']}"
-                        )
+                        with c1:
 
-                        st.write(
-                            f"**Confiance :** "
-                            f"{avion['confidence'] * 100:.2f} %"
-                        )
+                            st.markdown(
+                                f"""
+                                <div class="result-card">
+                                    <div class="info-label">
+                                        IDENTIFIED CLASS
+                                    </div>
+                                    <div class="result-class">
+                                        {avion['class']}
+                                    </div>
+                                </div>
+                                """,
+                                unsafe_allow_html=True
+                            )
 
-                        st.write(
-                            "**Coordonnées :**"
-                        )
+                        with c2:
+
+                            st.markdown(
+                                f"""
+                                <div class="result-card">
+                                    <div class="info-label">
+                                        CLASSIFICATION CONFIDENCE
+                                    </div>
+                                    <div class="result-class">
+                                        {avion['confidence'] * 100:.2f}%
+                                    </div>
+                                </div>
+                                """,
+                                unsafe_allow_html=True
+                            )
+
+                        st.write("Detection coordinates")
 
                         st.json(
                             avion["coordinates"]
                         )
 
             # =================================================
-            # JSON
+            # TELECHARGEMENT
             # =================================================
 
             donnees_json = {
@@ -512,45 +598,35 @@ if fichier_image is not None:
                 ensure_ascii=False
             ).encode("utf-8")
 
-            # =================================================
-            # TELECHARGEMENTS
-            # =================================================
-
-            st.divider()
-
-            st.subheader(
-                "Télécharger les résultats"
+            st.markdown(
+                """
+                <div class="section-heading">
+                    <span class="section-number">05</span>
+                    <span>EXPORT RESULTS</span>
+                </div>
+                """,
+                unsafe_allow_html=True
             )
 
-            col1, col2 = st.columns(2)
+            col_dl1, col_dl2 = st.columns(2)
 
-            with col1:
+            with col_dl1:
 
                 st.download_button(
-                    label="📥 Télécharger l'image annotée",
-
-                    data=_image_en_bytes(
-                        image_annotee
-                    ),
-
+                    "↓  DOWNLOAD ANNOTATED IMAGE",
+                    data=_image_en_bytes(image_annotee),
                     file_name="aircraft_ai_resultat.png",
-
                     mime="image/png",
-
                     use_container_width=True
                 )
 
-            with col2:
+            with col_dl2:
 
                 st.download_button(
-                    label="📄 Télécharger les résultats JSON",
-
+                    "↓  DOWNLOAD JSON DATA",
                     data=json_bytes,
-
                     file_name="resultats_aircraft_ai.json",
-
                     mime="application/json",
-
                     use_container_width=True
                 )
 
@@ -562,20 +638,34 @@ if fichier_image is not None:
 
 else:
 
-    st.info(
-        "Importe une image pour commencer l'analyse."
+    st.markdown(
+        """
+        <div class="upload-placeholder">
+            <div class="upload-icon">✈</div>
+            <h3>READY FOR ANALYSIS</h3>
+            <p>
+                Import an aircraft image to begin detection
+                and classification.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
     )
 
 
 # ============================================================
-# PIED DE PAGE
+# FOOTER
 # ============================================================
 
-st.divider()
-
-st.caption(
-    "Aircraft AI — Détection et classification d'avions "
-    "par intelligence artificielle."
+st.markdown(
+    """
+    <div class="footer">
+        <div class="footer-line"></div>
+        <p>AIRCRAFT AI · INTELLIGENT AVIATION ANALYSIS</p>
+        <span>POWERED BY YOLO & RESNET50</span>
+    </div>
+    """,
+    unsafe_allow_html=True
 )
 
 st.caption(
