@@ -517,13 +517,26 @@ if fichier_image is not None:
 # ============================================================
 
 st.markdown("""
-<div class="footer">
-    <div class="footer-logo">✈ AIRCRAFT AI</div>
-    <p>Détection et classification d'aéronefs par intelligence artificielle</p>
-    <span>YOLO · ResNet50 · Streamlit</span>
+<div class="hero">
+    <div class="hero-top">
+        <div class="hero-icon">✈</div>
+        <div class="hero-status">
+            <span class="status-dot"></span>
+            SYSTÈME IA ACTIF
+        </div>
+    </div>
+
+    <h1>Aircraft <span>AI</span></h1>
+
+    <p class="hero-subtitle">
+        Détection et classification intelligente d'aéronefs
+    </p>
+
+    <div class="hero-line"></div>
+
+    <p class="hero-description">
+        Analysez vos images grâce à l'intelligence artificielle.
+        Détectez les avions et identifiez automatiquement leurs catégories.
+    </p>
 </div>
 """, unsafe_allow_html=True)
-
-st.caption(
-    "Aircraft AI — Détection et classification d'avions par intelligence artificielle."
-)
