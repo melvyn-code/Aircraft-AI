@@ -1,0 +1,248 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Aircraft AI | Détection intelligente d'avions</title>
+
+    <meta name="description"
+          content="Aircraft AI : détectez et identifiez automatiquement les avions grâce à l'intelligence artificielle.">
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+    <!-- ========================================
+         EN-TETE
+    ========================================= -->
+
+    <header class="header">
+
+        <div class="container header-content">
+
+            <div class="logo">
+                <span class="logo-icon">✈</span>
+                <h1>Aircraft <span>AI</span></h1>
+            </div>
+
+            <p class="header-subtitle">
+                Artificial Intelligence Aircraft Detection
+            </p>
+
+        </div>
+
+    </header>
+
+
+    <!-- ========================================
+         CONTENU PRINCIPAL
+    ========================================= -->
+
+    <main class="container main-content">
+
+        <section class="hero">
+
+            <h2>Détection et classification d'avions</h2>
+
+            <p>
+                Importez une image pour détecter automatiquement les avions
+                et identifier leur catégorie grâce à l'intelligence artificielle.
+            </p>
+
+        </section>
+
+
+        <!-- ========================================
+             SECTION IMPORTATION
+        ========================================= -->
+
+        <section class="panel upload-panel">
+
+            <h2>1. Importer une image</h2>
+
+            <p class="section-description">
+                Sélectionnez une image contenant un ou plusieurs avions.
+            </p>
+
+            <div class="upload-area">
+
+                <div class="upload-icon">📁</div>
+
+                <label for="imageInput" class="upload-label">
+                    Choisir une image
+                </label>
+
+                <input
+                    type="file"
+                    id="imageInput"
+                    name="image"
+                    accept=".jpg,.jpeg,.png,.tif,.tiff,image/*"
+                >
+
+                <p class="upload-info">
+                    Formats acceptés : JPG, JPEG, PNG et TIFF.
+                    Taille maximale : 20 Mo.
+                </p>
+
+            </div>
+
+
+            <!-- Aperçu de l'image -->
+
+            <div class="preview-container">
+
+                <h3>Aperçu de l'image</h3>
+
+                <img
+                    id="preview"
+                    src=""
+                    alt="Aperçu de l'image sélectionnée"
+                    style="display: none;"
+                >
+
+            </div>
+
+
+            <!-- Bouton d'analyse -->
+
+            <div class="analyse-container">
+
+                <button
+                    type="button"
+                    id="analyseButton"
+                    class="primary-button"
+                >
+                    Analyser l'image
+                </button>
+
+            </div>
+
+
+            <!-- Message de statut -->
+
+            <p
+                id="status"
+                class="status"
+                role="status"
+                aria-live="polite"
+            >
+                En attente d'une image.
+            </p>
+
+        </section>
+
+
+        <!-- ========================================
+             SECTION RESULTATS
+        ========================================= -->
+
+        <section
+            id="results"
+            class="panel results-panel"
+            style="display: none;"
+        >
+
+            <h2>2. Résultats de l'analyse</h2>
+
+            <!-- Nombre d'avions -->
+
+            <div class="count-container">
+
+                <p>
+                    Nombre d'avions détectés :
+                    <strong id="aircraftCount">0</strong>
+                </p>
+
+            </div>
+
+
+            <!-- Image annotée -->
+
+            <div class="result-image-container">
+
+                <h3>Image analysée</h3>
+
+                <img
+                    id="resultImage"
+                    src=""
+                    alt="Image avec les avions détectés"
+                >
+
+            </div>
+
+
+            <!-- Téléchargements -->
+
+            <div class="download-container">
+
+                <a
+                    id="downloadImage"
+                    href="#"
+                    class="download-button"
+                    download
+                >
+                    Télécharger l'image annotée
+                </a>
+
+                <a
+                    id="downloadJson"
+                    href="#"
+                    class="download-button"
+                    download
+                >
+                    Télécharger les résultats JSON
+                </a>
+
+            </div>
+
+
+            <!-- Liste des avions -->
+
+            <div class="aircraft-results">
+
+                <h3>Détail des avions détectés</h3>
+
+                <div id="aircraftList"></div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <!-- ========================================
+         PIED DE PAGE
+    ========================================= -->
+
+    <footer class="footer">
+
+        <div class="container">
+
+            <p>
+                Aircraft AI — Détection intelligente d'avions
+            </p>
+
+            <p>
+                Propulsé par YOLO et ResNet50
+            </p>
+
+        </div>
+
+    </footer>
+
+
+    <!-- ========================================
+         JAVASCRIPT
+    ========================================= -->
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+
+</body>
+
+</html>

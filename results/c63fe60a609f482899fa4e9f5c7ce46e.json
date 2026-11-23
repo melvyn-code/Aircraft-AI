@@ -1,0 +1,24 @@
+{
+    "c63fe60a609f482899fa4e9f5c7ce46e.jpg": [
+        {
+            "class": "A10",
+            "confidence": 0.9998,
+            "coordinates": {
+                "xmin": 62,
+                "ymin": 205,
+                "xmax": 135,
+                "ymax": 284
+            }
+        },
+        {
+            "class": "A10",
+            "confidence": 0.4369,
+            "coordinates": {
+                "xmin": 484,
+                "ymin": 433,
+                "xmax": 550,
+                "ymax": 502
+            }
+        }
+    ]
+}

@@ -1,0 +1,384 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Aircraft AI | Détection d'avions</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #0b1220;
+            color: #f1f5f9;
+        }
+
+        header {
+            padding: 25px 8%;
+            background: #111c30;
+            border-bottom: 1px solid #26354d;
+        }
+
+        header h1 {
+            margin: 0;
+            color: #38bdf8;
+            font-size: 28px;
+        }
+
+        header p {
+            color: #94a3b8;
+            margin-bottom: 0;
+        }
+
+        main {
+            max-width: 1100px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .hero {
+            text-align: center;
+            margin-bottom: 35px;
+        }
+
+        .hero h2 {
+            font-size: 32px;
+        }
+
+        .hero p {
+            color: #94a3b8;
+            line-height: 1.6;
+        }
+
+        .panel {
+            background: #152238;
+            border: 1px solid #293b55;
+            border-radius: 14px;
+            padding: 28px;
+            margin-bottom: 25px;
+        }
+
+        .upload-area {
+            border: 2px dashed #38bdf8;
+            border-radius: 12px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+        }
+
+        .upload-area:hover {
+            background: #1c304b;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        button {
+            background: #0284c7;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 13px 25px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+
+        button:hover {
+            background: #0369a1;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #preview, #resultImage {
+            max-width: 100%;
+            max-height: 500px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        .result-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 15px;
+        }
+
+        .stat {
+            background: #0b1729;
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        .stat strong {
+            display: block;
+            color: #38bdf8;
+            font-size: 30px;
+            margin-top: 10px;
+        }
+
+        #status {
+            margin-top: 20px;
+            color: #fbbf24;
+        }
+
+        #aircraftList {
+            line-height: 1.8;
+            overflow-wrap: anywhere;
+        }
+
+        .download-links a {
+            display: inline-block;
+            margin: 12px 12px 0 0;
+            color: #38bdf8;
+            text-decoration: none;
+        }
+
+        .download-links a:hover {
+            text-decoration: underline;
+        }
+
+        footer {
+            text-align: center;
+            color: #64748b;
+            padding: 30px;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>✈ Aircraft AI</h1>
+    <p>Artificial Intelligence for Aircraft Detection and Classification</p>
+</header>
+
+<main>
+
+    <section class="hero">
+        <h2>Détection intelligente d'avions</h2>
+        <p>
+            Importez une image satellite et laissez notre intelligence
+            artificielle détecter et classifier les avions automatiquement.
+        </p>
+    </section>
+
+    <section class="panel">
+
+        <h3>1. Importer une image satellite</h3>
+
+        <label class="upload-area" for="imageInput">
+            <h3>📡 Sélectionner une image</h3>
+            <p>Formats acceptés : JPG, JPEG, PNG, TIFF</p>
+            <p>Cliquez ici pour choisir votre image</p>
+        </label>
+
+        <input
+            type="file"
+            id="imageInput"
+            accept=".jpg,.jpeg,.png,.tif,.tiff"
+        >
+
+        <div style="text-align:center">
+            <img id="preview" class="hidden" alt="Aperçu de l'image">
+        </div>
+
+        <div style="text-align:center">
+            <button id="analyseButton" disabled>
+                Lancer l'analyse
+            </button>
+        </div>
+
+        <p id="status" role="status"></p>
+
+    </section>
+
+    <section id="results" class="panel hidden">
+
+        <h3>2. Résultats de l'analyse</h3>
+
+        <div class="result-grid">
+            <div class="stat">
+                Nombre total d'avions
+                <strong id="aircraftCount">0</strong>
+            </div>
+
+            <div class="stat">
+                Modèles utilisés
+                <strong style="font-size:20px">YOLO + ResNet50</strong>
+            </div>
+        </div>
+
+        <h3>Image annotée</h3>
+
+        <img id="resultImage" alt="Image avec avions détectés">
+
+        <div class="download-links">
+            <a id="downloadImage" href="#" download>
+                ⬇ Télécharger l'image annotée
+            </a>
+
+            <a id="downloadJson" href="#" download>
+                ⬇ Télécharger les coordonnées JSON
+            </a>
+        </div>
+
+        <h3>3. Détails des avions détectés</h3>
+
+        <div id="aircraftList"></div>
+
+    </section>
+
+</main>
+
+<footer>
+    Aircraft AI — Détection et classification automatique d'avions
+</footer>
+
+<script>
+    const imageInput = document.getElementById("imageInput");
+    const preview = document.getElementById("preview");
+    const analyseButton = document.getElementById("analyseButton");
+    const status = document.getElementById("status");
+
+    let selectedFile = null;
+
+    imageInput.addEventListener("change", function () {
+
+        selectedFile = this.files[0];
+
+        if (!selectedFile) {
+            return;
+        }
+
+        const allowedTypes = [
+            "image/jpeg",
+            "image/png",
+            "image/tiff"
+        ];
+
+        const extension = selectedFile.name.split(".").pop().toLowerCase();
+
+        if (!allowedTypes.includes(selectedFile.type) &&
+            !["jpg", "jpeg", "png", "tif", "tiff"].includes(extension)) {
+
+            status.textContent = "Format d'image non accepté.";
+            selectedFile = null;
+            analyseButton.disabled = true;
+            return;
+        }
+
+        preview.src = URL.createObjectURL(selectedFile);
+        preview.classList.remove("hidden");
+
+        analyseButton.disabled = false;
+        status.textContent = "Image prête pour l'analyse.";
+    });
+
+
+    analyseButton.addEventListener("click", async function () {
+
+        if (!selectedFile) {
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append("image", selectedFile);
+
+        analyseButton.disabled = true;
+        status.textContent = "Analyse en cours... Veuillez patienter.";
+
+        document.getElementById("results").classList.add("hidden");
+
+        try {
+
+            const response = await fetch("/analyser", {
+                method: "POST",
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.erreur || "Erreur pendant l'analyse.");
+            }
+
+            document.getElementById("results").classList.remove("hidden");
+
+            document.getElementById("aircraftCount").textContent =
+                data.nombre_avions;
+
+            const resultImage = document.getElementById("resultImage");
+
+            resultImage.src = data.image_annotee + "?t=" + Date.now();
+
+            document.getElementById("downloadImage").href =
+                data.image_annotee;
+
+            document.getElementById("downloadJson").href =
+                data.fichier_json;
+
+            document.getElementById("downloadImage").download =
+                "image_annotee.jpg";
+
+            document.getElementById("downloadJson").download =
+                "resultats.json";
+
+            const aircraftList = document.getElementById("aircraftList");
+
+            aircraftList.innerHTML = "";
+
+            if (data.avions.length === 0) {
+
+                aircraftList.textContent = "Aucun avion détecté.";
+
+            } else {
+
+                data.avions.forEach((avion, index) => {
+
+                    const item = document.createElement("div");
+
+                    const c = avion.coordinates;
+
+                    item.textContent =
+                        "Avion " + (index + 1) +
+                        " — Classe : " + avion.class +
+                        " — Coordonnées : (" +
+                        c.xmin + ", " + c.ymin + ", " +
+                        c.xmax + ", " + c.ymax + ")";
+
+                    aircraftList.appendChild(item);
+                });
+            }
+
+            status.textContent = "Analyse terminée avec succès !";
+
+        } catch (error) {
+
+            status.textContent = "Erreur : " + error.message;
+
+        } finally {
+
+            analyseButton.disabled = false;
+        }
+    });
+</script>
+
+</body>
+</html>
