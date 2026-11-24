@@ -613,6 +613,7 @@ if st.session_state.resultats_json:
         st.rerun()
 
 
+
 # ==================================================
 # FOOTER
 # ==================================================
@@ -625,10 +626,6 @@ st.markdown("""
     </p>
     <small>
         Powered by Python · YOLO · ResNet50 · Streamlit
-    </small>
-</div>
-""", unsafe_allow_html=True)
-
     </small>
 </div>
 """, unsafe_allow_html=True)
