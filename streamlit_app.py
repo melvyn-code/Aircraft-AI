@@ -33,7 +33,9 @@ st.set_page_config(
 # ==================================================
 
 def charger_css():
+
     if CSS_PATH.exists():
+
         css = CSS_PATH.read_text(encoding="utf-8")
 
         st.markdown(
@@ -46,7 +48,7 @@ charger_css()
 
 
 # ==================================================
-# HEADER HTML
+# HEADER
 # ==================================================
 
 st.markdown("""
@@ -79,17 +81,20 @@ def charger_modeles():
             f"Modèle ResNet50 introuvable : {CLASSIFIER_PATH}"
         )
 
-    # Chargement YOLO
+    # Chargement du modèle YOLO
     modele_detection = YOLO(str(YOLO_PATH))
 
-    # Chargement du checkpoint
+    # Chargement du checkpoint ResNet50
     try:
+
         checkpoint = torch.load(
             str(CLASSIFIER_PATH),
             map_location="cpu",
             weights_only=False
         )
+
     except TypeError:
+
         checkpoint = torch.load(
             str(CLASSIFIER_PATH),
             map_location="cpu"
@@ -104,6 +109,7 @@ def charger_modeles():
         raise ValueError("Les catégories sont absentes du modèle.")
 
     if isinstance(categories, dict):
+
         categories = [
             categories[key]
             for key in sorted(categories.keys())
@@ -111,7 +117,9 @@ def charger_modeles():
 
     categories = list(categories)
 
-    taille_image = int(checkpoint.get("taille_image", 224))
+    taille_image = int(
+        checkpoint.get("taille_image", 224)
+    )
 
     # Architecture ResNet50
     modele_classification = models.resnet50(weights=None)
@@ -126,10 +134,13 @@ def charger_modeles():
         checkpoint.get("state_dict", checkpoint)
     )
 
+    # Correction des éventuels préfixes
     poids_corriges = {}
 
     for key, value in poids.items():
+
         nouveau_key = key.replace("module.", "", 1)
+
         poids_corriges[nouveau_key] = value
 
     modele_classification.load_state_dict(
@@ -141,12 +152,18 @@ def charger_modeles():
 
     # Prétraitement des images
     transformation = transforms.Compose([
-        transforms.Resize((taille_image, taille_image)),
+
+        transforms.Resize(
+            (taille_image, taille_image)
+        ),
+
         transforms.ToTensor(),
+
         transforms.Normalize(
             mean=[0.485, 0.456, 0.406],
             std=[0.229, 0.224, 0.225]
         )
+
     ])
 
     return (
@@ -176,7 +193,9 @@ def classifier_avion(
 
     with torch.no_grad():
 
-        predictions = modele_classification(tensor_image)
+        predictions = modele_classification(
+            tensor_image
+        )
 
         probabilites = torch.softmax(
             predictions,
@@ -189,6 +208,7 @@ def classifier_avion(
         )
 
     classe = categories[indice.item()]
+
     confiance = float(confiance.item())
 
     return classe, confiance
@@ -208,6 +228,7 @@ def analyser_image(image):
     ) = charger_modeles()
 
     image_originale = image.convert("RGB")
+
     image_annotee = image_originale.copy()
 
     dessin = ImageDraw.Draw(image_annotee)
@@ -215,10 +236,17 @@ def analyser_image(image):
     largeur, hauteur = image_annotee.size
 
     try:
-        police = ImageFont.truetype("arial.ttf", 18)
+
+        police = ImageFont.truetype(
+            "arial.ttf",
+            18
+        )
+
     except OSError:
+
         police = ImageFont.load_default()
 
+    # Détection YOLO
     resultats = modele_detection.predict(
         source=image_originale,
         conf=0.25,
@@ -238,17 +266,16 @@ def analyser_image(image):
 
             coordonnees = boite.xyxy[0].cpu().tolist()
 
-            confiance_detection = float(
-                boite.conf[0].cpu()
-            )
-
             x1, y1, x2, y2 = [
-                int(max(0, valeur))
+                int(round(valeur))
                 for valeur in coordonnees
             ]
 
-            x2 = min(x2, largeur)
-            y2 = min(y2, hauteur)
+            # Limitation aux dimensions de l'image
+            x1 = max(0, min(x1, largeur))
+            y1 = max(0, min(y1, hauteur))
+            x2 = max(0, min(x2, largeur))
+            y2 = max(0, min(y2, hauteur))
 
             if x2 <= x1 or y2 <= y1:
                 continue
@@ -258,25 +285,22 @@ def analyser_image(image):
                 (x1, y1, x2, y2)
             )
 
-            # Classification
-            classe, confiance_classification = classifier_avion(
+            # Classification ResNet50
+            classe, confiance = classifier_avion(
                 crop,
                 modele_classification,
                 categories,
                 transformation
             )
 
-            # Rectangle autour de l'avion
+            # Dessin du rectangle
             dessin.rectangle(
                 (x1, y1, x2, y2),
                 outline="#38bdf8",
                 width=4
             )
 
-            texte = (
-                f"{classe} "
-                f"({confiance_classification:.1%})"
-            )
+            texte = f"{classe} ({confiance:.1%})"
 
             position_texte = (
                 x1,
@@ -301,29 +325,39 @@ def analyser_image(image):
                 font=police
             )
 
-            # Enregistrement des résultats
+            # Enregistrement au format JSON demandé
             avions_detectes.append({
-                "numero": numero,
+
                 "class": str(classe),
-                "confidence": round(
-                    confiance_classification,
-                    4
-                ),
-                "detection_confidence": round(
-                    confiance_detection,
-                    4
-                ),
+
                 "coordinates": {
-                    "x1": x1,
-                    "y1": y1,
-                    "x2": x2,
-                    "y2": y2
+
+                    "xmin": x1,
+                    "ymin": y1,
+                    "xmax": x2,
+                    "ymax": y2
+
                 }
+
             })
 
             numero += 1
 
     return image_annotee, avions_detectes
+
+
+# ==================================================
+# INITIALISATION DES RESULTATS
+# ==================================================
+
+if "resultats_json" not in st.session_state:
+
+    st.session_state.resultats_json = {}
+
+
+if "images_analysees" not in st.session_state:
+
+    st.session_state.images_analysees = {}
 
 
 # ==================================================
@@ -343,8 +377,9 @@ with st.sidebar:
     st.markdown("""
     - Détection des aéronefs
     - Classification automatique
-    - Estimation de confiance
-    - Exportation des résultats
+    - Identification des coordonnées
+    - Exportation JSON
+    - Téléchargement des images
     """)
 
     st.markdown("---")
@@ -353,7 +388,7 @@ with st.sidebar:
 
 
 # ==================================================
-# SECTION PRINCIPALE
+# INTERFACE PRINCIPALE
 # ==================================================
 
 st.markdown("""
@@ -375,8 +410,10 @@ with col_upload:
 
     fichier = st.file_uploader(
         "Importer une image",
-        type=["jpg", "jpeg", "png"]
+        type=["jpg", "jpeg", "png"],
+        key="upload_image"
     )
+
 
 with col_info:
 
@@ -394,7 +431,7 @@ with col_info:
 
 
 # ==================================================
-# TRAITEMENT DE L'IMAGE
+# ANALYSE
 # ==================================================
 
 if fichier is not None:
@@ -405,7 +442,7 @@ if fichier is not None:
 
     st.image(
         image,
-        caption="Image originale",
+        caption=fichier.name,
         use_container_width=True
     )
 
@@ -420,85 +457,15 @@ if fichier is not None:
         try:
 
             with st.spinner(
-                "Analyse en cours : détection et classification..."
+                "Détection et classification en cours..."
             ):
 
                 image_resultat, avions = analyser_image(image)
 
-            st.success("Analyse terminée avec succès !")
+            # Sauvegarde des résultats de cette image
+            st.session_state.resultats_json[fichier.name] = avions
 
-            st.markdown("## Résultats de l'analyse")
-
-            col_image, col_stats = st.columns([1.6, 1])
-
-            with col_image:
-
-                st.image(
-                    image_resultat,
-                    caption="Image analysée",
-                    use_container_width=True
-                )
-
-            with col_stats:
-
-                st.markdown(
-                    f"""
-                    <div class="result-card">
-                        <p class="result-label">
-                            AÉRONEFS DÉTECTÉS
-                        </p>
-                        <div class="result-number">
-                            {len(avions)}
-                        </div>
-                        <p class="result-description">
-                            Nombre total d'aéronefs identifiés
-                        </p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-
-            # Affichage des avions
-            if avions:
-
-                st.markdown("### Détails des aéronefs")
-
-                for avion in avions:
-
-                    st.markdown(
-                        f"""
-                        <div class="aircraft-card">
-                            <div>
-                                <span class="aircraft-index">
-                                    AÉRONEF {avion["numero"]:02d}
-                                </span>
-                                <h3>{avion["class"]}</h3>
-                            </div>
-                            <div class="confidence">
-                                {avion["confidence"]:.1%}
-                            </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
-
-                    st.caption(
-                        "Confiance de détection : "
-                        f"{avion['detection_confidence']:.1%}"
-                    )
-
-            else:
-
-                st.warning(
-                    "Aucun aéronef n'a été détecté dans cette image."
-                )
-
-            # ==================================================
-            # TELECHARGEMENT DE L'IMAGE ANALYSEE
-            # ==================================================
-
-            nom_image = Path(fichier.name).stem
-
+            # Sauvegarde de l'image annotée en mémoire
             buffer_image = io.BytesIO()
 
             image_resultat.save(
@@ -506,47 +473,144 @@ if fichier is not None:
                 format="PNG"
             )
 
-            buffer_image.seek(0)
-
-            st.markdown("### Télécharger les résultats")
-
-            st.download_button(
-                label="📷 Télécharger l'image analysée",
-                data=buffer_image.getvalue(),
-                file_name=f"{nom_image}_analyse.png",
-                mime="image/png",
-                use_container_width=True
+            st.session_state.images_analysees[fichier.name] = (
+                buffer_image.getvalue()
             )
 
-            # ==================================================
-            # CREATION ET TELECHARGEMENT DU JSON
-            # ==================================================
-
-            donnees_json = {
-                fichier.name: avions
-            }
-
-            json_bytes = json.dumps(
-                donnees_json,
-                indent=4,
-                ensure_ascii=False
-            ).encode("utf-8")
-
-            st.download_button(
-                label="📄 Télécharger le fichier JSON",
-                data=json_bytes,
-                file_name=f"{nom_image}.json",
-                mime="application/json",
-                use_container_width=True
-            )
+            st.success("Analyse terminée avec succès !")
 
         except Exception as erreur:
 
-            st.error(
-                "Une erreur est survenue pendant l'analyse."
-            )
+            st.error("Une erreur est survenue pendant l'analyse.")
 
             st.exception(erreur)
+
+
+# ==================================================
+# AFFICHAGE DU DERNIER RESULTAT
+# ==================================================
+
+if fichier is not None and fichier.name in st.session_state.resultats_json:
+
+    avions = st.session_state.resultats_json[fichier.name]
+
+    image_bytes = st.session_state.images_analysees[fichier.name]
+
+    image_resultat = Image.open(
+        io.BytesIO(image_bytes)
+    )
+
+    st.markdown("## Résultats de l'analyse")
+
+    col_image, col_stats = st.columns([1.6, 1])
+
+    with col_image:
+
+        st.image(
+            image_resultat,
+            caption="Image analysée",
+            use_container_width=True
+        )
+
+    with col_stats:
+
+        st.markdown(
+            f"""
+            <div class="result-card">
+                <p class="result-label">AÉRONEFS DÉTECTÉS</p>
+                <div class="result-number">{len(avions)}</div>
+                <p class="result-description">
+                    Nombre total d'aéronefs identifiés
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    if avions:
+
+        st.markdown("### Détails des aéronefs")
+
+        for index, avion in enumerate(avions, start=1):
+
+            st.markdown(
+                f"""
+                <div class="aircraft-card">
+                    <div>
+                        <span class="aircraft-index">
+                            AÉRONEF {index:02d}
+                        </span>
+                        <h3>{avion["class"]}</h3>
+                    </div>
+                    <div class="confidence">
+                        {avion["class"]}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+    else:
+
+        st.warning(
+            "Aucun aéronef n'a été détecté dans cette image."
+        )
+
+
+# ==================================================
+# TELECHARGEMENT DE L'IMAGE
+# ==================================================
+
+    st.markdown("### Télécharger l'image analysée")
+
+    nom_image = Path(fichier.name).stem
+
+    st.download_button(
+        label="📷 Télécharger l'image analysée",
+        data=image_bytes,
+        file_name=f"{nom_image}_analyse.png",
+        mime="image/png",
+        use_container_width=True
+    )
+
+
+# ==================================================
+# TELECHARGEMENT DU JSON GLOBAL
+# ==================================================
+
+if st.session_state.resultats_json:
+
+    st.markdown("---")
+
+    st.markdown("## Exportation des résultats")
+
+    donnees_json = st.session_state.resultats_json
+
+    json_bytes = json.dumps(
+        donnees_json,
+        indent=2,
+        ensure_ascii=False
+    ).encode("utf-8")
+
+    st.download_button(
+        label="📄 Télécharger tous les résultats JSON",
+        data=json_bytes,
+        file_name="resultats_aircraft_ai.json",
+        mime="application/json",
+        use_container_width=True
+    )
+
+    st.caption(
+        f"{len(donnees_json)} image(s) enregistrée(s) dans le fichier JSON."
+    )
+
+    if st.button("Effacer tous les résultats"):
+
+        st.session_state.resultats_json = {}
+
+        st.session_state.images_analysees = {}
+
+        st.rerun()
 
 
 # ==================================================
@@ -561,6 +625,10 @@ st.markdown("""
     </p>
     <small>
         Powered by Python · YOLO · ResNet50 · Streamlit
+    </small>
+</div>
+""", unsafe_allow_html=True)
+
     </small>
 </div>
 """, unsafe_allow_html=True)
